@@ -11,7 +11,11 @@ services:
       # needed. Only set this if you deliberately split the frontend onto
       # another host -- which also opens the API to that host's users.
       RATE_APP_CORS_ORIGINS: ""
-      # This host is on UTC, so 05:00 here is midnight in Chakwal (UTC+5, no
-      # daylight saving). Set to 0 for midnight UTC.
-      RATE_APP_REFRESH_HOUR: "5"
+      # A wall-clock time in PAKISTAN time, not the host's local time, so the
+      # value is the same on a Pakistan laptop, a UTC Render container and a UTC
+      # VPS. 0 is midnight in Chakwal. This used to read "05:00 on UTC is
+      # midnight in Chakwal", which was wrong twice over: the value is not
+      # host-local, and 05:00 Pakistan time is 5am, not midnight. See the
+      # REFRESH_HOUR block in app.py and RATE_APP_REFRESH_HOUR in .env.example.
+      RATE_APP_REFRESH_HOUR: "0"
     restart: unless-stopped

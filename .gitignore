@@ -42,6 +42,15 @@ logs/
 # file.
 _loose-copies/
 
+# TLS material, as a backstop. The VPS deployment keeps Caddy's certificates in
+# /opt/chakwal/data, outside this repository, so nothing here should ever match.
+# It is listed because a private key must never reach GitHub even once, and a
+# leaked key cannot be un-leaked by deleting the file afterwards.
+*.pem
+*.crt
+*.key
+caddy*
+
 # The Visual C++ redistributable that the Windows 7 build downloads and bundles
 # into its installer. 24 MB of Microsoft binary, not ours, and not reproducible
 # from anything in this repository. The Inno Setup script fetches it instead.
