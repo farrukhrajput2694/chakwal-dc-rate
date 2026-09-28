@@ -1,0 +1,48 @@
+# Render blueprint. Connect a repo and Render builds and serves it, giving a
+# public HTTPS URL with no server to administer.
+#
+# Two settings are load-bearing rather than cosmetic:
+#
+#   numInstances: 1  BATCH_CONCURRENCY is a per-process semaphore, so the total
+#                   process count is what decides how many portal requests are
+#                   in flight at once. Two controls stack, and both are needed:
+#                   this field caps it at one container, and the Dockerfile's
+#                   `--workers 1` caps it at one uvicorn worker inside that
+#                   container. Either alone leaves the promise of four broken.
+#                   The field name is numInstances, NOT numWorkers -- the latter
+#                   is not a blueprint key and is silently ignored, so an
+#                   earlier version of this file set it and got nothing.
+#   healthCheckPath: /health, which never calls the portal, so Render's probes
+#                   cost the portal nothing.
+#
+# Large bulk runs are queued server-side by the app itself and polled, so
+# Render's request timeout does not cut them off -- see /api/rates/batch/async.
+
+services:
+  - type: web
+    name: chakwal-dc-rates
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter            # free instances sleep after inactivity and are
+                             # not suitable for a tool you open from a phone
+    region: frankfurt        # closest Render region to Pakistan; lower latency
+                             # to the Punjab portal is not the bottleneck, but
+                             # it does not hurt
+    healthCheckPath: /health
+    numInstances: 1          # one container; the Dockerfile pins one uvicorn
+                             # worker inside it, so one process serves every
+                             # request and BATCH_CONCURRENCY keeps its promise
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # RATE_APP_SERVERLESS is deliberately NOT set. This container keeps one
+      # process alive for its lifetime, so the nightly refresh, the queued bulk
+      # runs and SQLite history all work here. Setting it would switch all three
+      # off and make the site behave like the EdgeOne deployment instead.
+      #
+      # RATE_APP_REFRESH_HOUR is deliberately NOT set either. The scheduler reads
+      # it as a wall-clock time in Pakistan time and converts internally, so 00:00
+      # means midnight in Chakwal on this UTC container without help. An earlier
+      # version of this file suggested setting it to 5 here; that was wrong, and
+      # would now schedule the refresh for 10am. See the block above REFRESH_HOUR
+      # in app.py.

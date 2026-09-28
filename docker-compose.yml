@@ -1,0 +1,17 @@
+services:
+  web:
+    build: .
+    # Published on localhost only. Reaching it from the internet should go
+    # through a TLS-terminating reverse proxy (Caddy, nginx, Caddy + a tunnel),
+    # not by exposing this port raw to the world.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Leave empty: the page and the API are the same origin, so CORS is not
+      # needed. Only set this if you deliberately split the frontend onto
+      # another host -- which also opens the API to that host's users.
+      RATE_APP_CORS_ORIGINS: ""
+      # This host is on UTC, so 05:00 here is midnight in Chakwal (UTC+5, no
+      # daylight saving). Set to 0 for midnight UTC.
+      RATE_APP_REFRESH_HOUR: "5"
+    restart: unless-stopped

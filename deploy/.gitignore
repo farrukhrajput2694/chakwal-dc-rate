@@ -1,0 +1,19 @@
+# Python bytecode from local testing. Must not be deployed: EdgeOne installs
+# its own for its Python version, and shipping 3.12 output to a 3.10 runtime is
+# at best wasted bytes.
+__pycache__/
+*.py[cod]
+
+# Local virtualenv, if one is ever created inside this folder.
+.venv/
+venv/
+
+# Anything the build or a test run leaves behind.
+*.db
+.env
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  

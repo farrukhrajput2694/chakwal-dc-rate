@@ -1,0 +1,20 @@
+# Firebase Cloud Functions dependencies.
+#
+# uvicorn is deliberately absent: a function is not a server, it is an object
+# the platform calls. The Functions Framework is what receives the request.
+#
+# Versions below are the ones the local build is actually tested against.
+
+# Direct imports in app.py / govapi.py
+fastapi>=0.141,<1.0        # 0.141.1 tested
+httpx>=0.28,<0.29          # 0.28.1 tested
+pydantic>=2.9,<3.0
+
+# ASGI -> WSGI bridge, needed because the Functions Framework is WSGI and
+# FastAPI is ASGI. See wsgi_bridge.py for why this is a2wsgi and not
+# starlette.middleware.wsgi (deprecated in Starlette 1.7).
+a2wsgi>=1.10,<2.0          # 1.10.10 tested
+
+# The Firebase SDK. Pinned under 1.0: https_fn.Response and the HttpsOptions
+# kwargs used in main.py are 0.x API.
+firebase-functions>=0.6,<1.0   # 0.6.0 tested

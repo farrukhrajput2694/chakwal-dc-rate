@@ -1,0 +1,9 @@
+# EdgeOne's Python 3.10 runtime installs these from cloud-functions/requirements.txt.
+# It also auto-detects imports and adds common packages, but pinning them here
+# makes the build reproducible rather than dependent on that detection.
+#
+# Version note: the runtime is Python 3.10, so the floors below are deliberately
+# the lowest that work. Do not raise them past what 3.10 supports.
+fastapi>=0.110
+httpx>=0.26
+uvicorn>=0.27

@@ -1,0 +1,18 @@
+{
+  "overseasRegions": ["ap-singapore"],
+  "cloudFunctions": {
+    "maxDuration": 120
+  },
+  "outputDirectory": "./public",
+  "headers": [
+    {
+      "source": "/static/*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ]
+}

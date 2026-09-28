@@ -1,0 +1,86 @@
+Chakwal DC Rate Calculator
+==========================
+
+What this program does
+----------------------
+
+It works out the value of a Khasra (a land parcel number) in Tehsil Chakwal,
+District Chakwal, from the DC rate published for that parcel.
+
+For a rural Khasra you pick the mouza, the qanoongo, the land classification and
+the location, then the Khasra number. For an urban property you pick the
+property area and the square number. You enter the area, and the program tells
+you the value.
+
+Where the numbers come from
+---------------------------
+
+DC rates are read live from the Punjab e-Stamp portal
+(https://es.punjab-zameen.gov.pk/eStampCitizenPortal) every single time you
+look one up. They are not stored, not cached to disk, and not bundled with this
+program. That is deliberate: a saved rate quietly goes stale, and a stale rate
+presented as current is worse than no answer at all.
+
+The area conversion tables (how many Marla are in a Kanal, and so on) and the
+list of Khasra numbers are local, because those are place names and reference
+data rather than rates.
+
+This program needs an internet connection to show a rate. If it cannot reach the
+portal it says so rather than showing a number it cannot stand behind. A parcel
+with no published rate is reported as having no rate. It is never given a
+figure of zero, because zero is not the same answer as "not published".
+
+What this program is not
+------------------------
+
+This program is not affiliated with, endorsed by, or operated by the
+Government of the Punjab, the Revenue Department, or any other government
+body. It carries no government emblem, seal or branding, and it is not a copy
+of any government website.
+
+It is an independent calculator. The figures it shows are read from the public
+portal, but how they are presented, converted and totalled is this program's
+own work.
+
+It is not a legal, financial, taxation or valuation opinion, and it is not a
+certified copy of anything. A figure shown here should be confirmed against
+the official record before it is relied on for a transaction, a bank, a court,
+or a stamp duty assessment. The rate is also only correct as of the moment it
+was read: DC rates are revised by notification, and this program cannot tell
+you when the last revision happened.
+
+Privacy
+-------
+
+This program does not collect, store, transmit or log anything about you. It
+has no account, no telemetry, and no analytics.
+
+The only network traffic it ever makes is to the Punjab e-Stamp portal, to
+fetch the rate you asked for. It runs entirely on your own computer and
+listens only on the loopback interface (127.0.0.1), which no other machine can
+reach.
+
+Where it keeps its files
+------------------------
+
+The program is installed under Program Files, which Windows protects. So the
+few things it writes at run time -- a log, and a text file recording the local
+address it is serving on -- go to:
+
+    %LOCALAPPDATA%\ChakwalDC
+
+Nothing else is written anywhere.
+
+Licence and warranty
+--------------------
+
+This program is provided as-is, with no warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement.
+
+In no event shall the author be liable for any claim, damages or other
+liability, whether in an action of contract, tort or otherwise, arising from,
+out of or in connection with the program or its use.
+
+You may use, copy and redistribute this program. You may not use the name of
+any government body, or any emblem, to imply endorsement.

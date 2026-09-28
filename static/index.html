@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chakwal DC Rate Calculator — Tehsil Chakwal land valuation (unofficial)</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">CW</span>
+      <div>
+        <h1>Chakwal DC Rate Calculator</h1>
+        <p class="brand-sub">Tehsil Chakwal land valuation lookup</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge badge-district" id="district-badge">Tehsil Chakwal</span>
+      <span class="badge badge-unofficial">Unofficial tool</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap layout">
+
+  <!-- ============ Lookup form ============ -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Look up a DC rate</h2>
+      <div class="seg" role="tablist" aria-label="Land type">
+        <button class="seg-btn is-active" data-land-type="rural" role="tab" aria-selected="true">Rural</button>
+        <button class="seg-btn" data-land-type="urban" role="tab" aria-selected="false">Urban</button>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <form id="lookup-form" autocomplete="off">
+
+        <div class="grid-2">
+          <div class="field">
+            <span>District</span>
+            <!-- Fixed: this calculator is scoped to Tehsil Chakwal. -->
+            <div class="locked-field" id="district-locked">District Chakwal</div>
+          </div>
+          <div class="field">
+            <span>Tehsil</span>
+            <!-- Fixed: this calculator is scoped to Tehsil Chakwal. -->
+            <div class="locked-field" id="tehsil-locked">Tehsil Chakwal</div>
+          </div>
+        </div>
+
+        <!-- Shown on the Urban tab only. Chakwal's urban rate coverage on the
+             official portal is patchy; say so up front rather than letting the
+             user discover it as an empty dropdown three steps in. -->
+        <p class="notice hidden" id="urban-coverage-note">
+          <strong>Heads-up on urban coverage.</strong> The portal lists Tehsil
+          Chakwal's urban property areas — 2 towns, 10 revenue circles, 118
+          property areas — but every one of those 118 reports
+          <em>no Khasra number, no Square number, and no land
+          classification</em>. So the urban chain stops at the Property Area:
+          the Location dropdown stays empty and there is no narrower parcel to
+          pick. That is a gap in the portal's own published data, not a fault
+          in this tool.
+          <strong>Rural data is complete and unaffected</strong> — all 226
+          mouzas publish classifications, locations and Khasra numbers.
+        </p>
+
+        <!-- Remaining steps are ordered by JS: which one comes first depends on
+             whether the parcel or the classification narrows the rate down. -->
+        <div id="flow">
+
+        <div id="block-scope">
+          <!-- Urban-only -->
+          <div id="urban-scope" class="hidden">
+            <div class="grid-2">
+              <label class="field">
+                <span>Town / City</span>
+                <select id="town" disabled></select>
+              </label>
+              <label class="field">
+                <span>Revenue Circle</span>
+                <select id="revenue-circle" disabled></select>
+              </label>
+            </div>
+            <div class="grid-2">
+              <label class="field">
+                <span>Floor</span>
+                <select id="floor" disabled></select>
+              </label>
+              <label class="field">
+                <span>Property Area</span>
+                <select id="property-area" disabled></select>
+              </label>
+            </div>
+          </div>
+
+          <!-- Rural-only -->
+          <div id="rural-scope">
+            <div class="grid-2">
+              <label class="field">
+                <span>Qanoongoee</span>
+                <select id="qanoongo" disabled></select>
+                <small class="field-note" id="qanoongo-note">Optional — picking a Mouza fills this in for you.</small>
+              </label>
+              <label class="field">
+                <span>Mouza</span>
+                <input id="mouza-search" type="search" autocomplete="off"
+                       placeholder="Search by name…" aria-label="Search mouza by name"
+                       disabled>
+                <select id="mouza" disabled></select>
+                <small class="field-note" id="mouza-search-note" hidden></small>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="block-classification">
+          <div class="grid-2">
+            <label class="field">
+              <span>Land classification</span>
+              <select id="land-classification" disabled></select>
+            </label>
+            <label class="field">
+              <span>Location</span>
+              <select id="location" disabled></select>
+            </label>
+          </div>
+        </div>
+
+        <hr class="rule">
+
+        <!-- Parcel identifier; which inputs show is decided by the portal -->
+        <div id="block-parcel" class="parcel hidden">
+          <p class="hint" id="parcel-hint" hidden>
+            This parcel can be rated by either basis — pick the one your record uses.
+          </p>
+
+          <div id="parcel-choice" class="seg hidden" role="radiogroup" aria-label="Rate basis">
+            <button type="button" class="seg-btn is-active" data-path="khasra" role="radio" aria-checked="true">By Khasra</button>
+            <button type="button" class="seg-btn" data-path="qila" role="radio" aria-checked="false">By Square / Qila</button>
+          </div>
+
+          <div id="parcel-khasra" class="hidden">
+            <label class="field">
+              <span>Khasra number</span>
+              <input id="khasra" list="khasra-options" placeholder="e.g. 119" disabled>
+              <datalist id="khasra-options"></datalist>
+              <small class="field-note">Type the number, or pick from the list if the portal has suggestions.</small>
+            </label>
+
+            <!-- Bulk: the portal has no "many Khasras" rate endpoint, so this
+                 runs one lookup per Khasra. Kept behind its own control, with a
+                 visible cap, so a single click can never fire 2,000 requests. -->
+            <div class="multi" id="khasra-multi" hidden>
+              <button type="button" class="btn btn-sm" id="multi-toggle">
+                Select many Khasras…
+              </button>
+              <p class="field-note" id="multi-summary" hidden></p>
+
+              <div class="multi-panel" id="multi-panel" hidden>
+                <div class="multi-tools">
+                  <input id="multi-filter" type="search" autocomplete="off"
+                         placeholder="Filter by number, e.g. 12"
+                         aria-label="Filter Khasra numbers">
+                  <button type="button" class="btn btn-sm" id="multi-all">Select all matching</button>
+                  <button type="button" class="btn btn-sm" id="multi-none">Clear</button>
+                  <span class="multi-count" id="multi-count"></span>
+                </div>
+
+                <div class="multi-grid" id="multi-grid" role="group"
+                     aria-label="Khasra numbers"></div>
+                <p class="multi-trunc" id="multi-trunc" hidden></p>
+                <p class="multi-hint">
+                  Click to toggle. Hold <kbd>Shift</kbd> and click another number to
+                  select everything between the two. Numbers are in ascending order.
+                </p>
+
+                <div class="multi-foot">
+                  <button type="button" class="btn btn-primary btn-sm" id="multi-run">
+                    Find rates for selected
+                  </button>
+                  <button type="button" class="btn btn-sm" id="multi-close">Close</button>
+                  <span class="multi-note" id="multi-note">
+                    One lookup per Khasra on the official portal, run a few at a
+                    time, so a large selection takes a while. There is no limit on
+                    how many you may pick.
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="parcel-qila" class="grid-2 hidden">
+            <label class="field">
+              <span>Square number</span>
+              <input id="square-no" list="square-options" placeholder="e.g. 42" disabled>
+              <datalist id="square-options"></datalist>
+            </label>
+            <label class="field">
+              <span>Qila number</span>
+              <input id="qila-no" list="qila-options" placeholder="e.g. 7" disabled>
+              <datalist id="qila-options"></datalist>
+            </label>
+          </div>
+
+          <p id="parcel-none" class="hint hidden">
+            This parcel is rated at Property Area level — no Khasra or Qila number needed.
+          </p>
+        </div>
+
+        </div><!-- /#flow -->
+
+        <hr class="rule">
+
+        <!-- Area -->
+        <div class="area-block">
+          <div class="grid-2">
+            <label class="field">
+              <span>Land area</span>
+              <input id="area-value" type="number" step="any" min="0" value="1" required>
+            </label>
+            <label class="field">
+              <span>Area unit</span>
+              <select id="area-unit"></select>
+            </label>
+          </div>
+
+          <details class="conv">
+            <summary>Unit conversion settings</summary>
+            <p class="field-note">
+              Punjab has more than one accepted Acre and Marla size. These default to the
+              official portal's own calculator settings — change them if your record uses another.
+            </p>
+            <div class="grid-2">
+              <label class="field">
+                <span>1 Acre equals</span>
+                <select id="acre-to-kanal">
+                  <option value="8">8 Kanal</option>
+                  <option value="9.65">9 Kanal 13 Marla</option>
+                  <option value="9.8">9 Kanal 16 Marla</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>1 Marla equals</span>
+                <select id="marla-to-sqft">
+                  <option value="272">272 sq ft</option>
+                  <option value="225">225 sq ft</option>
+                </select>
+              </label>
+            </div>
+            <div class="conv-out" id="conv-out"></div>
+          </details>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="find-btn">Find DC rate</button>
+          <button type="button" class="btn" id="reset-btn">Reset</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ Result ============ -->
+  <section class="card" id="result-card" hidden>
+    <div class="card-head"><h2>Result</h2></div>
+    <div class="card-body" id="result-body"></div>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>
+    Unofficial helper for Tehsil Chakwal, District Chakwal. Rates are read live from
+    <span class="mono">es.punjab-zameen.gov.pk</span> and remain the property of the
+    Government of the Punjab. Verify on the official portal before relying on any figure.
+  </p>
+  <p class="refresh-line">
+    <span id="refresh-note">Checking list freshness…</span>
+    <button type="button" id="refresh-now" class="link-btn" hidden>Refresh lists now</button>
+  </p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

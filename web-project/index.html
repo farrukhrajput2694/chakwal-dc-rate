@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chakwal DC Rate Calculator — Tehsil Chakwal land valuation (unofficial)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">CW</span>
+      <div>
+        <h1>Chakwal DC Rate Calculator</h1>
+        <p class="brand-sub">Tehsil Chakwal land valuation lookup</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="badge badge-district">Tehsil Chakwal</span>
+      <span class="badge badge-unofficial">Unofficial tool</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap layout">
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Look up a DC rate</h2>
+      <div class="seg" role="tablist" aria-label="Land type">
+        <button type="button" class="seg-btn is-active" data-land-type="rural" role="tab" aria-selected="true">Rural</button>
+        <button type="button" class="seg-btn" data-land-type="urban" role="tab" aria-selected="false">Urban</button>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <!-- novalidate: this app does its own validation and reports every
+           problem in #status, in one consistent place, with the offending
+           field focused and marked. Left to the browser, a negative rate or a
+           cleared area is rejected by the native constraint check *before*
+           app.js ever runs, so the status line stays blank with no
+           explanation and the guard never gets to say anything. The `min` and
+           `required` attributes stay on the inputs as spinner hints; this
+           suppresses only the browser's own blocking. -->
+      <form id="lookup-form" autocomplete="off" novalidate>
+
+        <div class="grid-2">
+          <div class="field">
+            <span>District</span>
+            <div class="locked-field" id="district-locked">District Chakwal</div>
+          </div>
+          <div class="field">
+            <span>Tehsil</span>
+            <div class="locked-field" id="tehsil-locked">Tehsil Chakwal</div>
+          </div>
+        </div>
+
+        <!-- Measured, not assumed: all 118 property areas in the tehsil report
+             no Khasra, no Square number and no published classification. Urban
+             therefore stops at the Property Area, and that is the portal's own
+             gap rather than anything this tool can fill. -->
+        <p class="notice hidden" id="urban-coverage-note">
+          <span class="notice-ico">i</span><div>
+            <strong>Heads-up on urban coverage.</strong> The portal lists Tehsil
+            Chakwal's urban property areas — 2 towns, 10 revenue circles, 118
+            property areas — but every one of those 118 reports
+            <em>no Khasra number, no Square number, and no land
+            classification</em>. So the urban chain stops at the Property Area:
+            there is no narrower parcel to pick and no Location list to choose
+            from. That is a gap in the portal's own published data, not a fault
+            in this tool.
+            <strong>Rural data is complete and unaffected</strong> — all 226
+            mouzas publish classifications, locations and Khasra numbers.
+          </div>
+        </p>
+
+        <!-- This build has no backend, so the rate cannot be read straight from
+             the portal. Say so here, once, plainly, rather than letting the user
+             fill in the whole form and fail at the end. -->
+        <p class="notice notice-warn" id="source-note">
+          <span class="notice-ico">!</span><div>
+            <strong>This is the offline build.</strong> The form, the unit
+            conversion and the DC value arithmetic all run in your browser and
+            are exact. The one thing it cannot do is read the rate from the
+            Punjab e-Stamp portal itself — that needs a small server, because
+            the portal sends no CORS headers and browsers block the reply.
+            Enter a rate below to use the calculator, or run the FastAPI project
+            for live lookups.
+          </div>
+        </p>
+
+        <div id="flow">
+
+          <div id="block-scope">
+            <!-- Urban-only. Chakwal's urban rate coverage on the portal is thin
+                 in a specific, measured way -- say it up front rather than
+                 letting the user discover it as an empty dropdown. -->
+            <div id="urban-scope" class="hidden">
+              <div class="grid-2">
+                <label class="field">
+                  <span>Town / City</span>
+                  <select id="town"></select>
+                </label>
+                <label class="field">
+                  <span>Revenue Circle</span>
+                  <select id="revenue-circle"></select>
+                </label>
+              </div>
+              <div class="grid-2">
+                <label class="field">
+                  <span>Floor</span>
+                  <select id="floor"></select>
+                </label>
+                <label class="field">
+                  <span>Property Area</span>
+                  <select id="property-area"></select>
+                  <small class="field-note" id="property-area-note"></small>
+                </label>
+              </div>
+            </div>
+
+            <!-- Rural-only -->
+            <div id="rural-scope">
+              <div class="grid-2">
+                <label class="field">
+                  <span>Qanoongoee</span>
+                  <select id="qanoongo" disabled></select>
+                  <small class="field-note">Optional — picking a Mouza fills this in for you.</small>
+                </label>
+                <label class="field">
+                  <span>Mouza</span>
+                  <input id="mouza-search" type="search" autocomplete="off"
+                         placeholder="Search by name…" aria-label="Search mouza by name"
+                         disabled>
+                  <select id="mouza" disabled></select>
+                  <small class="field-note" id="mouza-search-note" hidden></small>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rural only. No urban property area in this tehsil publishes a
+               classification, so this block is hidden on the Urban tab rather
+               than showing a dropdown that can only ever be empty. -->
+          <div id="block-classification" class="hidden">
+            <div class="grid-2">
+              <label class="field">
+                <span>Land classification</span>
+                <select id="land-classification"></select>
+              </label>
+              <label class="field">
+                <span>Location</span>
+                <select id="location"></select>
+              </label>
+            </div>
+          </div>
+
+          <hr class="rule">
+
+          <div id="block-parcel">
+            <!-- Rural parcel -->
+            <div id="parcel-khasra">
+            <label class="field">
+              <span>Khasra number</span>
+              <input id="khasra" list="khasra-options" placeholder="e.g. 119" inputmode="numeric">
+              <datalist id="khasra-options"></datalist>
+              <small class="field-note" id="khasra-note">
+                Pick one, or open the list below to value many at once.
+              </small>
+            </label>
+
+            <!-- Multi-Khasra picker. Every Khasra the portal publishes for the
+                 chosen location is bundled, so this list is always complete:
+                 nothing to page through, nothing to load on demand. -->
+            <div class="multi" id="khasra-multi" hidden>
+              <button type="button" class="btn btn-sm" id="multi-toggle">
+                Select many Khasras…
+              </button>
+              <p class="field-note" id="multi-summary" hidden></p>
+
+              <div class="multi-panel" id="multi-panel" hidden>
+                <div class="multi-tools">
+                  <input id="multi-filter" type="search" autocomplete="off"
+                         placeholder="Filter by number, e.g. 12"
+                         aria-label="Filter Khasra numbers">
+                  <button type="button" class="btn btn-sm" id="multi-all">Select all matching</button>
+                  <button type="button" class="btn btn-sm" id="multi-none">Clear</button>
+                  <span class="multi-count" id="multi-count"></span>
+                </div>
+
+                <div class="multi-grid" id="multi-grid" role="group"
+                     aria-label="Khasra numbers"></div>
+                <p class="multi-trunc" id="multi-trunc" hidden></p>
+                <p class="multi-hint">
+                  Click to toggle. Hold <kbd>Shift</kbd> and click another number to
+                  select everything between the two. Numbers are in ascending order.
+                </p>
+
+                <div class="multi-foot">
+                  <button type="button" class="btn btn-primary btn-sm" id="multi-run">
+                    Value selected
+                  </button>
+                  <button type="button" class="btn btn-sm" id="multi-close">Close</button>
+                  <span class="multi-note" id="multi-note"></span>
+                </div>
+              </div>
+            </div>
+            </div><!-- /#parcel-khasra -->
+
+            <!-- Urban parcel. Which of these applies is decided by the portal's
+                 own availability flags for the chosen property area, not by
+                 assumption. Today every one of the 118 reports neither, so the
+                 Property Area level message is what actually shows. -->
+            <p id="parcel-none" class="hint hidden">
+              This property area is rated at Property Area level — the portal
+              publishes no Khasra or Square number for it, so there is no
+              narrower parcel to pick.
+            </p>
+
+          </div>
+
+        </div><!-- /#flow -->
+
+        <hr class="rule">
+
+        <!-- The rate. In the live build this arrives from the portal; here it is
+             entered by hand, so it is an input rather than an output. It is
+             optional: leave it blank and the run still answers with the area
+             conversions, just with no valuation. Everything below it is the
+             same arithmetic the server does. -->
+        <div class="area-block">
+          <div class="grid-2">
+            <label class="field">
+              <span>DC rate <small class="opt-tag">optional</small></span>
+              <!-- Deliberately NOT `required`. The browser's own bubble would
+                   block submit before app.js runs, leaving the status line
+                   blank with no explanation. A blank rate is now allowed
+                   anyway, so the guard in renderResult() only speaks up when
+                   something was typed that cannot be a rate. -->
+              <input id="rate-value" type="number" step="any" min="0"
+                     placeholder="leave blank for area only">
+            </label>
+            <label class="field">
+              <span>Rate is per</span>
+              <select id="rate-unit"></select>
+            </label>
+          </div>
+          <small class="field-note">
+            Take this from the official portal's DC Valuation page for the same
+            Mouza, classification and Khasra. The unit matters: rural
+            agricultural Khasras are commonly quoted per Acre, not per Marla.
+          </small>
+
+          <div class="grid-2" style="margin-top:14px">
+            <label class="field">
+              <span>Land area</span>
+              <input id="area-value" type="number" step="any" min="0" value="1" required>
+            </label>
+            <label class="field">
+              <span>Area unit</span>
+              <select id="area-unit"></select>
+            </label>
+          </div>
+
+          <details class="conv">
+            <summary>Unit conversion settings</summary>
+            <p class="field-note">
+              Punjab has more than one accepted Acre and Marla size. These default to the
+              official portal's own calculator settings — change them if your record uses another.
+            </p>
+            <div class="grid-2">
+              <label class="field">
+                <span>1 Acre equals</span>
+                <select id="acre-to-kanal">
+                  <option value="8">8 Kanal</option>
+                  <option value="9.65">9 Kanal 13 Marla</option>
+                  <option value="9.8">9 Kanal 16 Marla</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>1 Marla equals</span>
+                <select id="marla-to-sqft">
+                  <option value="272">272 sq ft</option>
+                  <option value="225">225 sq ft</option>
+                </select>
+              </label>
+            </div>
+            <div class="conv-out" id="conv-out"></div>
+          </details>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="find-btn">Calculate DC value</button>
+          <button type="button" class="btn" id="reset-btn">Reset</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="card" id="result-card" hidden>
+    <div class="card-head"><h2>Result</h2></div>
+    <div class="card-body" id="result-body"></div>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>
+    Unofficial helper for Tehsil Chakwal, District Chakwal. DC rates are the property of the
+    Government of the Punjab. Verify on the official portal before relying on any figure.
+  </p>
+  <p class="refresh-line">
+    <span id="refresh-note">Loading reference lists…</span>
+  </p>
+</footer>
+
+<script src="data/reference.js"></script>
+<script src="data/urban.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
