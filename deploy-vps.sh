@@ -45,23 +45,39 @@ die()  { printf '\033[31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- preflight --
 [ "$(id -u)" -eq 0 ] || die "run as root, or with sudo"
-[ -n "$DOMAIN" ] || die "usage: sudo ./deploy-vps.sh your-domain.example.com"
 
-PUBLIC_IP="$(curl -fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)"
-if [ -z "$PUBLIC_IP" ]; then
-  warn "could not determine this server's public IP; skipping the DNS check"
+# The domain is optional, and running without one is the better first move.
+# Get the app answering on a plain IP, confirm a real rate lookup works, and
+# only then add DNS and TLS. Doing it the other way round means a certificate
+# or DNS mistake looks like an application fault, and those are hard to tell
+# apart from six minutes of cold start. Re-run with the domain to switch over:
+#   sudo ./deploy-vps.sh your-domain.example.com
+
+if [ -z "$DOMAIN" ]; then
+  log "no domain given - bringing the site up on a bare IP over plain HTTP"
+  log "re-run later with a domain to add HTTPS: sudo ./deploy-vps.sh your-domain"
 else
-  log "this server's public IP is $PUBLIC_IP"
-  RESOLVED="$(dig +short "$DOMAIN" A 2>/dev/null | tail -n1 || true)"
-  if [ -z "$RESOLVED" ]; then
-    die "$DOMAIN does not resolve. Add an A record pointing at $PUBLIC_IP, then re-run.
+  # Oracle and other cloud images are minimal and often ship without dig, which
+  # would make the DNS preflight below silently pass on an empty result.
+  if ! command -v dig >/dev/null 2>&1; then
+    apt-get update -qq 2>/dev/null && apt-get install -y -qq dnsutils >/dev/null 2>&1 || true
+  fi
+  PUBLIC_IP="$(curl -fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)"
+  if [ -z "$PUBLIC_IP" ]; then
+    warn "could not determine this server's public IP; skipping the DNS check"
+  else
+    log "this server's public IP is $PUBLIC_IP"
+    RESOLVED="$(dig +short "$DOMAIN" A 2>/dev/null | tail -n1 || true)"
+    if [ -z "$RESOLVED" ]; then
+      die "$DOMAIN does not resolve. Add an A record pointing at $PUBLIC_IP, then re-run.
        Let's Encrypt cannot issue a certificate for a name that does not resolve."
-  fi
-  if [ "$RESOLVED" != "$PUBLIC_IP" ]; then
-    die "$DOMAIN resolves to $RESOLVED, but this server is $PUBLIC_IP.
+    fi
+    if [ "$RESOLVED" != "$PUBLIC_IP" ]; then
+      die "$DOMAIN resolves to $RESOLVED, but this server is $PUBLIC_IP.
        Fix the A record first, or Caddy will fail to get a certificate."
+    fi
+    log "$DOMAIN resolves to this server"
   fi
-  log "$DOMAIN resolves to this server"
 fi
 
 # ------------------------------------------------------------------ docker --
@@ -156,10 +172,11 @@ YAML
 # ------------------------------------------------------------------- caddy --
 log "writing the Caddyfile"
 mkdir -p "$APP_DIR/caddy"
-# Caddy obtains and renews the certificate itself. The bare `:80` listener is
-# deliberate: it answers the HTTP-01 challenge that Let's Encrypt uses to prove
-# domain control, and redirects everything else to HTTPS.
-cat > "$APP_DIR/caddy/Caddyfile" <<'CADDY'
+if [ -n "$DOMAIN" ]; then
+  # Caddy obtains and renews the certificate itself. The bare `:80` listener is
+  # deliberate: it answers the HTTP-01 challenge that Let's Encrypt uses to prove
+  # domain control, and redirects everything else to HTTPS.
+  cat > "$APP_DIR/caddy/Caddyfile" <<'CADDY'
 :80 {
     respond /.well-known/acme-challenge/* 200
     redir https://{host}{uri} permanent
@@ -173,6 +190,18 @@ cat > "$APP_DIR/caddy/Caddyfile" <<'CADDY'
     reverse_proxy app:8000
 }
 CADDY
+else
+  # No domain yet: serve plain HTTP so the app can be proven working on its raw
+  # IP before any certificate or DNS record enters the picture. `http://` is
+  # explicit because Caddy would otherwise infer a hostname and try to issue a
+  # certificate for an IP address, which Let's Encrypt will not do.
+  cat > "$APP_DIR/caddy/Caddyfile" <<'CADDY'
+http:// {
+    encode zstd gzip
+    reverse_proxy app:8000
+}
+CADDY
+fi
 
 # --------------------------------------------------------------- firewall --
 if command -v ufw >/dev/null 2>&1; then
@@ -193,12 +222,22 @@ CHAKWAL_DOMAIN="$DOMAIN" docker compose -f "$COMPOSE" up -d --build
 # reboot, because docker.service starts before it. Nothing else is needed, and
 # a systemd unit would only duplicate that.
 
-log "waiting for TLS and the first reference-list walk"
+# The address to poll. With no domain this is the machine's own public IP over
+# plain HTTP, which is how the first deployment is meant to be proven.
+if [ -n "$DOMAIN" ]; then
+  BASE="https://$DOMAIN"
+else
+  SELF_IP="$(curl -fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)"
+  [ -n "$SELF_IP" ] || die "could not determine this server's public IP to poll"
+  BASE="http://$SELF_IP"
+fi
+
+log "waiting for the first reference-list walk (and TLS, if a domain is set)"
 printf '    this takes up to %s minutes on a cold start.\n' "$((HEALTH_TIMEOUT / 60))"
 DEADLINE=$(( $(date +%s) + HEALTH_TIMEOUT ))
 LAST=""
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  if BODY="$(curl -fsS --max-time 10 "https://$DOMAIN/health" 2>/dev/null)"; then
+  if BODY="$(curl -fsS --max-time 10 "$BASE/health" 2>/dev/null)"; then
     RUNNING="$(printf '%s' "$BODY" | grep -o '"refresh_running":[a-z]*' | cut -d: -f2)"
     if [ "$RUNNING" = "False" ]; then
       printf '\n\033[32m    ready.\033[0m %s\n' "$BODY"
@@ -206,7 +245,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     fi
     LAST="still walking the reference lists"
   else
-    LAST="not answering yet (building, or Caddy is still getting its certificate)"
+    LAST="not answering yet (still building, or Caddy is getting its certificate)"
   fi
   printf '    %s\n' "$LAST"
   sleep 20
@@ -220,28 +259,46 @@ docker compose -f "$COMPOSE" logs --tail 15 app 2>&1 | sed 's/^/    /'
 cat <<SUMMARY
 
 --------------------------------------------------------------------------
- Site:    https://$DOMAIN
- Health:  https://$DOMAIN/health
+ Site:    $BASE
+ Health:  $BASE/health
 
  Survives reboot:  yes. Both services are 'restart: unless-stopped' and
                    docker.service starts on boot, so nothing re-registers.
+                   This machine staying on is irrelevant to the site.
 
  Survives disk fill: no. If this machine's disk fills, the portal walk will
                    fail and lookups will stop. Worth a disk alert.
 
  Restarting after an update:
     cd $APP_DIR/app && git pull && cd $APP_DIR
-    CHAKWAL_DOMAIN=$DOMAIN docker compose -f $COMPOSE up -d --build
+    CHAKWAL_DOMAIN="$DOMAIN" docker compose -f $COMPOSE up -d --build
 
  One thing to expect: the reference lists live in the process, not on disk
  (app.py, "live and die with the process"). So if the container is ever
  restarted, the site is unusable for roughly six minutes while it re-reads
  all 1,070 lists -- about 2,300 calls to the government portal. The page
- still loads and looks correct throughout; only lookups fail. If your
- provider recycles containers on a schedule, that window will come back
- every cycle. Persisting the cache to a volume is the fix, and is a change
+ still loads and looks correct throughout; only lookups fail. A real VM does
+ not get recycled the way a container platform does, so this window should
+ happen rarely. Persisting the cache to a volume is the fix, and is a change
  to app.py rather than to this script.
+$([ -n "$DOMAIN" ] || cat <<NOSSL
 
+ ---------------------------------------------------------------------
+ This was brought up on a bare IP over plain HTTP, on purpose. Prove the
+ app works before adding a certificate. Once a rate lookup returns the
+ expected figure, add a domain and re-run to switch on HTTPS:
+
+     sudo $APP_DIR/app/deploy-vps.sh your-domain.example.com
+
+ For a free domain name, the DuckDNS record dcratecalculator.duckdns.org
+ already exists. Point it at $SELF_IP by running duckdns-update.ps1 with
+ -IpOverride, or set the A record where it is registered. Note that the
+ hourly ChakwalDuckDns task on your PC will keep pushing the PC's own IP
+ over anything you set by hand -- disable that task first with:
+
+     Disable-ScheduledTask -TaskName ChakwalDuckDns
+NOSSL
+)
  Verify it properly, not just by the page loading. This lookup should return
  Rs 366,025 per acre:
     Mouza Alawal / Qanoongoee Balkassar / Agricultural / Link Road / Khasra 947

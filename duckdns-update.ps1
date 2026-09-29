@@ -20,6 +20,15 @@
     Create the token file so the token is not in the command line or in this
     file. It is ignored by git via duckdns.token in .gitignore.
     Set-Content -Path .\duckdns.token -Value 'your-token-here' -NoNewline
+
+.EXAMPLE
+    Point the record at a server that is not this machine -- a VPS, for
+    instance -- by giving its address explicitly instead of detecting one:
+    .\duckdns-update.ps1 -Domain myname -IpOverride 203.0.113.9
+
+    If a scheduled task is still pushing this machine's own address, it will
+    overwrite whatever is set by hand. Disable it first:
+    Disable-ScheduledTask -TaskName ChakwalDuckDns
 #>
 [CmdletBinding()]
 param(
@@ -33,7 +42,13 @@ param(
     [string]$StateFile,
 
     [Parameter(Mandatory = $false)]
-    [string]$LogFile
+    [string]$LogFile,
+
+    # Push this address instead of detecting this machine's own. Used to point
+    # a record at a VPS. The state file is keyed on the domain, not the source
+    # of the address, so switching between them still logs a change correctly.
+    [Parameter(Mandatory = $false)]
+    [string]$IpOverride
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,12 +110,24 @@ if (Test-Path -LiteralPath $StateFile) {
 # -------------------------------------------------------------------- query --
 # Several services here return the caller's address as plain text. Try a couple,
 # because a single provider being down should not mean the IP is never updated.
+# -IpOverride skips detection entirely, which is how a record gets pointed at a
+# VPS rather than at whichever machine happens to run this.
 $publicIp = $null
+if ($IpOverride) {
+    $candidate = $IpOverride.Trim()
+    if ($candidate -notmatch '^\d{1,3}(\.\d{1,3}){3}$') {
+        Write-DuckLog "-IpOverride '$candidate' is not a plain IPv4 address. Refusing to send it." 'ERROR'
+        exit 2
+    }
+    $publicIp = $candidate
+    Write-DuckLog "using the supplied address $publicIp rather than detecting this machine's own."
+}
 $providers = @(
     'https://api.ipify.org',
     'https://ifconfig.me/ip',
     'https://icanhazip.com'
 )
+if (-not $publicIp) {
 foreach ($p in $providers) {
     try {
         $candidate = (Invoke-RestMethod -Uri $p -TimeoutSec 15 -UseBasicParsing).ToString().Trim()
@@ -111,6 +138,7 @@ foreach ($p in $providers) {
     } catch {
         Write-DuckLog "IP lookup failed via $p : $($_.Exception.Message)" 'WARN'
     }
+}
 }
 if (-not $publicIp) {
     Write-DuckLog "Could not determine the public IP from any of $($providers.Count) providers." 'ERROR'
