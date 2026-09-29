@@ -57,3 +57,7 @@ caddy*
 # Matched at any depth: there is a copy in desktop/win7/ and another in
 # desktop/win7/prereq/, and a path-specific rule only caught the first one.
 desktop/win7/**/*.exe
+
+# DuckDNS updater state. Holds the public IP it last pushed, which is
+# not secret but is machine state and changes every time the IP changes.
+duckdns.lastip
